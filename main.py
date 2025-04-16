@@ -31,7 +31,7 @@ exchange = ccxt.binance({
 
 # Trading parameters
 symbol = 'BTC/USDT'
-timeframe = '5m'
+timeframe = '1d'
 limit = 20
 
 
