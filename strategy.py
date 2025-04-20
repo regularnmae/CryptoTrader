@@ -1,25 +1,28 @@
-# strategy.py
-from typing import List, Optional, Dict
 import logging
+from typing import List, Optional, Dict
 
 DEFAULT_SHORT_PERIOD = 5
 DEFAULT_LONG_PERIOD = 10
-DEFAULT_TOLERANCE = 0.01
+DEFAULT_TOLERANCE = 0.01  # 1% tolerance
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(message)s")
+
 
 def calculate_ma(prices: List[float], period: int) -> Optional[float]:
-    """
-    Calculate the simple moving average (SMA) for a list of prices.
-    """
+    """Calculate the simple moving average (SMA) for a list of prices."""
     if len(prices) < period:
+        logging.debug(f"Insufficient data for SMA calculation with period {period}.")
         return None
-    return sum(prices[-period:]) / period
+    ma = sum(prices[-period:]) / period
+    logging.debug(f"Calculated MA for period {period}: {ma:.2f}")
+    return ma
+
 
 def calculate_fibonacci_levels(high: float, low: float) -> Dict[str, float]:
-    """
-    Calculate common Fibonacci retracement levels between high and low.
-    """
+    """Calculate common Fibonacci retracement levels between high and low."""
     diff = high - low
-    return {
+    levels = {
         '0.0%': high,
         '23.6%': high - 0.236 * diff,
         '38.2%': high - 0.382 * diff,
@@ -27,14 +30,18 @@ def calculate_fibonacci_levels(high: float, low: float) -> Dict[str, float]:
         '61.8%': high - 0.618 * diff,
         '100.0%': low
     }
+    logging.debug(f"Calculated Fibonacci levels: {levels}")
+    return levels
+
 
 def near_fibonacci(target: float, price: float, tol: float = DEFAULT_TOLERANCE) -> bool:
-    """
-    Check if a price is within a tolerance of a Fibonacci level.
-    """
+    """Check if a price is within a tolerance of a Fibonacci level."""
     if target == 0:
         return False
-    return abs(price - target) / target <= tol
+    result = abs(price - target) / target <= tol
+    logging.debug(f"Checking if price {price} is near Fibonacci level {target}: {result}")
+    return result
+
 
 def evaluate_signals(
     closes: List[float],
@@ -58,9 +65,18 @@ def evaluate_signals(
     logging.debug(f"Short MA: {short_ma:.2f}, Long MA: {long_ma:.2f}, Current Price: {current_price:.2f}")
     logging.debug(f"Fibonacci Levels: {fib_levels}")
 
-    if short_ma > long_ma and near_fibonacci(fib_levels['61.8%'], current_price, tolerance):
+    is_near_fib_buy = near_fibonacci(fib_levels['61.8%'], current_price, tolerance)
+    is_near_fib_sell = near_fibonacci(fib_levels['38.2%'], current_price, tolerance)
+
+    logging.debug(f"Is price near 61.8% Fibonacci level for BUY: {is_near_fib_buy}")
+    logging.debug(f"Is price near 38.2% Fibonacci level for SELL: {is_near_fib_sell}")
+
+    if short_ma > long_ma and is_near_fib_buy:
+        logging.info(f"Signal: BUY at price {current_price:.2f}")
         return 'BUY'
-    elif short_ma < long_ma and near_fibonacci(fib_levels['38.2%'], current_price, tolerance):
+    elif short_ma < long_ma and is_near_fib_sell:
+        logging.info(f"Signal: SELL at price {current_price:.2f}")
         return 'SELL'
     else:
+        logging.info(f"Signal: HOLD at price {current_price:.2f}")
         return 'HOLD'

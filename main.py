@@ -1,88 +1,121 @@
-# main.py
 import time
 import logging
 from typing import Optional, List, Tuple
+
 from data import fetch_data, exchange
 from strategy import calculate_fibonacci_levels, evaluate_signals
 from logger_config import setup_logging
-from config import SYMBOL, RETRY_DELAY, RESET_POSITION_TIMEOUT
+from config import SYMBOL, RETRY_DELAY, RESET_POSITION_TIMEOUT, MAX_RETRIES
 
 
-def extract_prices(bars: List[List[float]]) -> Tuple[List[float], List[float], List[float]]:
-    """
-    Extract closing, high, and low prices from the fetched OHLCV bars.
-    """
-    closes = [bar[4] for bar in bars]
-    highs = [bar[2] for bar in bars]
-    lows = [bar[3] for bar in bars]
-    return closes, highs, lows
+class DataFetchError(Exception):
+    """Raised when data fetching fails."""
+    pass
 
+class TradingBot:
+    def __init__(
+        self,
+        symbol: str = SYMBOL,
+        retry_delay: int = RETRY_DELAY,
+        reset_timeout: int = RESET_POSITION_TIMEOUT,
+        max_retries: int = MAX_RETRIES,
+    ):
+        self.symbol = symbol
+        self.retry_delay = retry_delay
+        self.reset_timeout = reset_timeout
+        self.max_retries = max_retries
 
-def execute_trade(signal: str, position: Optional[str]) -> Optional[str]:
-    """
-    Execute a trade if the signal suggests a position change.
-    Returns the new position or current one if no trade is made.
-    """
-    if signal == 'BUY' and position != 'long':
-        logging.info("BUY signal received; executing BUY order.")
-        # exchange.create_market_buy_order(SYMBOL, amount)
-        return 'long'
-    elif signal == 'SELL' and position != 'short':
-        logging.info("SELL signal received; executing SELL order.")
-        # exchange.create_market_sell_order(SYMBOL, amount)
-        return 'short'
-    else:
-        logging.info("No trade action. Current position: %s", position)
-        return position
+        self.position: Optional[str] = None
+        self.last_trade_time = time.time()
 
+        self.logger = logging.getLogger(self.__class__.__name__)
 
-def main():
-    setup_logging()
-    logging.info("Starting trading bot with symbol %s", SYMBOL)
+    @staticmethod
+    def extract_prices(bars: List[List[float]]) -> Tuple[List[float], List[float], List[float]]:
+        closes = [bar[4] for bar in bars]
+        highs = [bar[2] for bar in bars]
+        lows = [bar[3] for bar in bars]
+        return closes, highs, lows
 
-    position: Optional[str] = None
-    last_trade_time = time.time()
+    def fetch_with_retry(self) -> Optional[List[List[float]]]:
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                bars = fetch_data()
+                if bars:
+                    return bars
+                self.logger.warning("Empty data returned (attempt %d/%d)", attempt, self.max_retries)
+            except DataFetchError as e:
+                self.logger.warning("Fetch error on attempt %d/%d: %s", attempt, self.max_retries, str(e))
+            time.sleep(self.retry_delay * attempt)
 
-    while True:
-        try:
-            bars = fetch_data()
+        self.logger.error("Failed to fetch data after %d attempts", self.max_retries)
+        return None
+
+    def execute_trade(self, signal: str) -> None:
+        if signal == 'BUY' and self.position != 'long':
+            self.logger.info("Executing BUY for %s", self.symbol)
+            # exchange.create_market_buy_order(self.symbol, amount)
+            self._update_position('long')
+
+        elif signal == 'SELL' and self.position != 'short':
+            self.logger.info("Executing SELL for %s", self.symbol)
+            # exchange.create_market_sell_order(self.symbol, amount)
+            self._update_position('short')
+
+        else:
+            self.logger.debug("No trade executed | Current: %s | Signal: %s", self.position, signal)
+
+    def _update_position(self, new_position: str):
+        self.position = new_position
+        self.last_trade_time = time.time()
+        self.logger.info("Position updated to %s", self.position)
+
+    def reset_position_if_stale(self):
+        if time.time() - self.last_trade_time > self.reset_timeout:
+            self.logger.info("Resetting stale position (%ds timeout)", self.reset_timeout)
+            self.position = None
+            self.last_trade_time = time.time()
+
+    def run(self):
+        self.logger.info("Bot running on %s", self.symbol)
+        while True:
+            bars = self.fetch_with_retry()
             if not bars:
-                logging.warning("No data fetched. Retrying in %d seconds...", RETRY_DELAY)
-                time.sleep(RETRY_DELAY)
+                time.sleep(self.retry_delay)
                 continue
 
-            closes, highs, lows = extract_prices(bars)
+            closes, highs, lows = self.extract_prices(bars)
+            if len(closes) < 20:
+                self.logger.warning("Insufficient data for analysis. Waiting...")
+                time.sleep(self.retry_delay)
+                continue
+
             current_price = closes[-1]
-            recent_high = max(highs)
-            recent_low = min(lows)
+            recent_high = max(highs[-20:])
+            recent_low = min(lows[-20:])
 
             fib_levels = calculate_fibonacci_levels(recent_high, recent_low)
-            logging.info("Current price: %.2f | Fibonacci Levels: %s", current_price, fib_levels)
-
             signal = evaluate_signals(closes, fib_levels)
-            logging.info("Trading Signal: %s", signal)
 
-            new_position = execute_trade(signal, position)
-            if new_position != position:
-                position = new_position
-                last_trade_time = time.time()
+            self.logger.info("Price: %.2f | Signal: %s", current_price, signal)
+            self.logger.debug("Fibonacci levels: %s", fib_levels)
 
-            if time.time() - last_trade_time > RESET_POSITION_TIMEOUT:
-                logging.info("Reset timeout reached. Clearing position.")
-                position = None
-                last_trade_time = time.time()
+            self.execute_trade(signal)
+            self.reset_position_if_stale()
 
-        except Exception as e:
-            logging.error("An error occurred in the main loop: %s", e, exc_info=True)
-
-        time.sleep(RETRY_DELAY)
+            time.sleep(self.retry_delay)
 
 
 if __name__ == '__main__':
+    setup_logging()
+    logging.info("Launching TradingBot...")
+
+    bot = TradingBot()
+
     try:
-        main()
+        bot.run()
     except KeyboardInterrupt:
-        logging.info("Shutdown signal received. Exiting trading bot...")
+        logging.info("KeyboardInterrupt received. Shutting down gracefully...")
     finally:
         exchange.close()
         logging.info("Exchange connection closed.")
