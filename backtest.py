@@ -156,5 +156,5 @@ if __name__=='__main__':
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(name)s %(message)s")
     bot = BacktestBot()
-    df  = bot.load_data("data/BTC_USDT_1d.csv")
+    df  = bot.load_data("data/BTC_USDT_1h.csv")
     bot.run(df)

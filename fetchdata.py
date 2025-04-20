@@ -7,7 +7,7 @@ from datetime import datetime
 symbol = 'BTC/USDT'
 timeframe = '1h'  # 1m, 5m, 1h, 1d, etc.
 limit = 500  # Max candles per fetch (Binance limit is 1500)
-since = ccxt.binance().parse8601('2024-01-01T00:00:00Z')  # Start time
+since = ccxt.binance().parse8601('2023-07-01T00:00:00Z')  # Start time
 
 # Init exchange
 exchange = ccxt.binance()

@@ -16,7 +16,7 @@ if not SECRET_KEY:
 
 # Trading configuration
 SYMBOL = os.getenv('SYMBOL', 'BTC/USDT')
-TIMEFRAME = os.getenv('TIMEFRAME', '5m')
+TIMEFRAME = os.getenv('TIMEFRAME', '1m')
 LIMIT = int(os.getenv('LIMIT', 20))
 RETRY_DELAY = int(os.getenv('RETRY_DELAY', 60))  # seconds
 RESET_POSITION_TIMEOUT = int(os.getenv('RESET_POSITION_TIMEOUT', 3600))  # seconds
